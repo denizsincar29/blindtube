@@ -12,12 +12,20 @@ class YoutubePlayer(wx.Frame):
         wx.Frame.__init__(self, None, title="Youtube Player", size=(640, 480))
         self.panel = wx.Panel(self)
         self.edit_box = wx.TextCtrl(self.panel, style=wx.TE_PROCESS_ENTER, pos=(10, 10), size=(200, 20))
-        self.list_box = wx.ListBox(self.panel, pos=(10, 40), size=(200, 400))
+        self.list_box = wx.ListCtrl(self.panel, pos=(10, 40), size=(200, 400))
+        self.list_box.InsertColumn(0, 'Results')
         self.media_player = wx.media.MediaCtrl(self.panel)
         self.media_player.Bind(wx.media.EVT_MEDIA_LOADED, self.on_media_loaded)
         self.edit_box.Bind(wx.EVT_TEXT_ENTER, self.on_search)
         self.output = auto.Auto()
         self.results={}
+
+    def new_item(self, id, text):
+        item = wx.ListItem()
+        item.SetId(id)
+        item.SetText(text)
+        self.list_box.InsertItem(item)
+
 
     def on_search(self, event):
         query = self.edit_box.GetValue()
@@ -26,9 +34,13 @@ class YoutubePlayer(wx.Frame):
         items = search.result()["result"]
         video_ids = [item["id"] for item in items]
         video_titles = [item["title"] for item in items]
-        self.list_box.SetItems(video_titles)
+        self.list_box.DeleteAllItems()
+        for i, item in enumerate(video_titles):
+            self.new_item(i, item)
+
         self.media_player.Stop()
         self.results={k: v for k, v in zip(video_titles, video_ids)}
+        self.list_box.Focus(0)
 
     def on_media_loaded(self, event):
         print("loaded")
@@ -45,15 +57,12 @@ class YoutubePlayer(wx.Frame):
 
     def on_list_select(self, event):
         self.output.output("loading")
-        video_id = self.results[event.GetString()]
+        video_id = self.results[event.GetText()]
         self.play_video(video_id)
 
-    def on_list_double_click(self, event):
-        self.on_list_select(event)
 
     def bind_list_events(self):
-        #self.list_box.Bind(wx.EVT_LISTBOX, self.on_list_select)
-        self.list_box.Bind(wx.EVT_LISTBOX_DCLICK, self.on_list_double_click)
+        self.list_box.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.on_list_select)
 
         
 if __name__ == "__main__":
