@@ -55,8 +55,8 @@ class YoutubePlayer(wx.Frame):
         video = pafy.new(url)
         best = video.getbest(preftype="mp4")
         play_url = best.url
-        # wopen(play_url)
-        mpv.MPV().play(play_url)
+        wopen(play_url)
+        #mpv.MPV().play(play_url)
 
     def on_list_select(self, event):
         self.output.output("loading")

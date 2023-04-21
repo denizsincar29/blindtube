@@ -1,2 +1,3 @@
 youtube-search-python
 yt_dlp
+mplayer.py
