@@ -1,15 +1,12 @@
 import wx
-import mpv
 import wx.media
 import pafy
 from webbrowser import open as wopen
 from youtubesearchpython import VideosSearch
 from accessible_output2.outputs import auto
-#wx.media.MediaCtrl.DefaultBackend = wx.media.MEDIABACKEND_WMP10
 
 
 class YoutubePlayer(wx.Frame):
-    
     def __init__(self):
         wx.Frame.__init__(self, None, title="Youtube Player", size=(640, 480))
         self.panel = wx.Panel(self)
@@ -18,6 +15,7 @@ class YoutubePlayer(wx.Frame):
         self.list_box.InsertColumn(0, 'Results')
         #self.media_player = wx.media.MediaCtrl(self.panel)
         #self.media_player.Bind(wx.media.EVT_MEDIA_LOADED, self.on_media_loaded)
+
         self.edit_box.Bind(wx.EVT_TEXT_ENTER, self.on_search)
         self.output = auto.Auto()
         self.speak=self.output.output
@@ -55,7 +53,8 @@ class YoutubePlayer(wx.Frame):
         video = pafy.new(url)
         best = video.getbest(preftype="mp4")
         play_url = best.url
-        wopen(play_url)
+        #wopen(play_url)
+        self.media.LoadUri(play_url)
         #mpv.MPV().play(play_url)
 
     def on_list_select(self, event):
