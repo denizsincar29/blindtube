@@ -2,3 +2,4 @@ youtube-search-python
 yt_dlp
 youtube-dl==2020.12.2
 sound_lib
+pafy
