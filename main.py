@@ -51,7 +51,7 @@ class YoutubePlayer(wx.Frame):
         play_url = best.url
         #wopen(play_url)
     
-        self.stream=stream.URLStream(play_url)
+        self.stream=stream.URLStream(url=play_url)
         self.stream.play()
 
     def on_list_select(self, event):
