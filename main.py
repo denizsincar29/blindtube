@@ -1,13 +1,8 @@
 import wx
 import os
-#os.environ["PAFY_BACKEND"]="internal"
-import pafy
-from webbrowser import open as wopen
-from youtubesearchpython import VideosSearch
+import pytube
 from accessible_output2.outputs import auto
-from sound_lib import stream, output
-o=output.Output()
-
+import vlc
 
 class YoutubePlayer(wx.Frame):
     def __init__(self):
@@ -20,7 +15,7 @@ class YoutubePlayer(wx.Frame):
         self.edit_box.Bind(wx.EVT_TEXT_ENTER, self.on_search)
         self.output = auto.Auto()
         self.speak=self.output.output
-        self.bstream=None
+        self.player=vlc.MediaPlayer()
         self.results={}
 
     def new_item(self, id, text):
@@ -33,26 +28,20 @@ class YoutubePlayer(wx.Frame):
     def on_search(self, event):
         query = self.edit_box.GetValue()
         self.output.output("Searching for " + query)
-        search = VideosSearch(query, limit=50)
-        items = search.result()["result"]
-        video_ids = [item["id"] for item in items]
-        video_titles = [item["title"] for item in items]
+        search = pytube.Search(query)
+        items = search.results
+        video_titles = [item.title for item in items]
         self.list_box.DeleteAllItems()
         for i, item in enumerate(video_titles):
             self.new_item(i, item)
 
-        self.results={k: v for k, v in zip(video_titles, video_ids)}
+        self.results={k: v for k, v in zip(video_titles, items)}
         self.list_box.Focus(0)
 
-    def play_video(self, video_id):
-        url = f"https://www.youtube.com/watch?v={video_id}"
-        video = pafy.new(url)
-        best = video.getbestaudio("m4a")
-        play_url = best.url
-        #wopen(play_url)
-    
-        self.stream=stream.URLStream(url=play_url)
-        self.stream.play()
+    def play_video(self, video):
+        self.player.release()
+        self.player=vlc.MediaPlayer(video.streams.filter(only_audio=True)[-1].url)
+        self.player.play()
 
     def on_list_select(self, event):
         self.output.output("loading")

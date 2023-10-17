@@ -1,3 +1,5 @@
+attrdict3
+wxpython
+python-vlc
 git+https://github.com/rgryta/pytube.git@main
-sound_lib
-pafy
+accessible-output2
