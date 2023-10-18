@@ -1,5 +1,3 @@
-attrdict3
-wxpython
-python-vlc
+PyQt6
 git+https://github.com/rgryta/pytube.git@main
 accessible-output2

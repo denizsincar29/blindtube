@@ -1,61 +1,65 @@
-import wx
-import os
+import sys
+from PyQt6.QtGui import QIcon, QImage, QPixmap
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QLabel
+from PyQt6.QtMultimedia import QMediaPlayer
+from PyQt6.QtMultimediaWidgets import QVideoWidget
+from PyQt6.QtCore import Qt, QUrl
 import pytube
-from accessible_output2.outputs import auto
-import vlc
+import requests
 
-class YoutubePlayer(wx.Frame):
+class YouTubePlayer(QMainWindow):
     def __init__(self):
-        wx.Frame.__init__(self, None, title="Youtube Player", size=(640, 480))
-        self.panel = wx.Panel(self)
-        self.edit_box = wx.TextCtrl(self.panel, style=wx.TE_PROCESS_ENTER, pos=(10, 10), size=(200, 20))
-        self.list_box = wx.ListCtrl(self.panel, pos=(10, 40), size=(200, 400), style=wx.LC_SINGLE_SEL|wx.LC_REPORT)
-        self.list_box.InsertColumn(0, 'Results')
+        super().__init__()
+        self.setWindowTitle("YouTube Player")
+        central_widget = QWidget(self)
+        self.setCentralWidget(central_widget)
+        layout = QVBoxLayout()
+        central_widget.setLayout(layout)
 
-        self.edit_box.Bind(wx.EVT_TEXT_ENTER, self.on_search)
-        self.output = auto.Auto()
-        self.speak=self.output.output
-        self.player=vlc.MediaPlayer()
-        self.results={}
+        self.search_field = QLineEdit()
+        self.search_field.setPlaceholderText("Search")
+        self.search_field.returnPressed.connect(self.search)
+        self.search_field.installEventFilter(self)
+        layout.addWidget(self.search_field)
 
-    def new_item(self, id, text):
-        item = wx.ListItem()
-        item.SetId(id)
-        item.SetText(text)
-        self.list_box.InsertItem(item)
+        self.results_list = QListWidget()
+        self.results_list.itemActivated.connect(self.play_video)
+        layout.addWidget(self.results_list)
 
+        # Video player widget
+        self.video_player = QMediaPlayer()
+        self.video_widget = QVideoWidget()
+        layout.addWidget(self.video_widget)
 
-    def on_search(self, event):
-        query = self.edit_box.GetValue()
-        self.output.output("Searching for " + query)
-        search = pytube.Search(query)
-        items = search.results
-        video_titles = [item.title for item in items]
-        self.list_box.DeleteAllItems()
-        for i, item in enumerate(video_titles):
-            self.new_item(i, item)
+        self.results = {}
 
-        self.results={k: v for k, v in zip(video_titles, items)}
-        self.list_box.Focus(0)
+    def search(self):
+        self.results_list.clear()
+        self.results.clear()
 
-    def play_video(self, video):
-        self.player.release()
-        self.player=vlc.MediaPlayer(video.streams.filter(only_audio=True)[-1].url)
-        self.player.play()
+        query = self.search_field.text()
+        # nvda speaks: searching for query
+        search_results = pytube.Search(query).results
 
-    def on_list_select(self, event):
-        self.output.output("loading")
-        video_id = self.results[event.GetText()]
-        self.speak("Playing!")
-        self.play_video(video_id)
+        for video in search_results:
+            item = QListWidgetItem(video.title)
+            item.setData(Qt.ItemDataRole.UserRole, video)  # Store the video object in the item
+            self.results_list.addItem(item)
 
+    def play_video(self, item: QListWidgetItem):
+        print(f'playing {item}')
+        stream_url=item.data(Qt.ItemDataRole.UserRole).streams.filter(only_video=True, file_extension="mp4").first().url
+        media_content = QUrl.fromUserInput(stream_url)
+        video = item.data(Qt.ItemDataRole.UserRole)  # Retrieve the video object from the item
+        if video:
+            stream_url = video.streams.filter(only_video=True, file_extension="mp4").first().url
 
-    def bind_list_events(self):
-        self.list_box.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.on_list_select)
-        
+        self.video_player.setSource(media_content)
+        self   .video_player.setVideoOutput(self.video_widget)
+        self.video_player.play()
+
 if __name__ == "__main__":
-    app = wx.App()
-    player = YoutubePlayer()
-    player.bind_list_events()
-    player.Show()
-    app.MainLoop()
+    app = QApplication(sys.argv)
+    window = YouTubePlayer()
+    window.show()
+    sys.exit(app.exec())
