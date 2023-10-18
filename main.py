@@ -37,7 +37,7 @@ class YouTubePlayer(QMainWindow):
         self.results = {}
         # self.video_player.mediaStatusChanged.connect(self.handleStateChange)
 
-    """"""
+    """
     @pyqtSlot(QMediaPlayer.MediaStatus)
     def handleStateChange(self, state):
         if state == QMediaPlayer.mediaStatus.:
@@ -46,7 +46,7 @@ class YouTubePlayer(QMainWindow):
             print("Paused")
         elif state == QMediaPlayer.State.StoppedState:
             print("Stopped")
-    """"""
+    """
 
 
     def search(self):
@@ -63,13 +63,12 @@ class YouTubePlayer(QMainWindow):
             self.results_list.addItem(item)
 
     def play_video(self, item: QListWidgetItem):
+        self.video_player.stop()
         video: pytube.YouTube=item.data(Qt.ItemDataRole.UserRole)
         print(f'playing {video.title}')
         stream_url=video.streams.filter(only_video=False, only_audio=False, file_extension="mp4").first().url
         #wopen(stream_url)
         media_content = QUrl.fromUserInput(stream_url)
-        if self.video_player.isPlaying():
-            self.video_player.stop()
         self.video_player.setSource(media_content)
         self   .video_player.setVideoOutput(self.video_widget)
         self.video_player.play()
