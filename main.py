@@ -47,16 +47,15 @@ class YouTubePlayer(QMainWindow):
             self.results_list.addItem(item)
 
     def play_video(self, item: QListWidgetItem):
-        print(f'playing {item}')
-        stream_url=item.data(Qt.ItemDataRole.UserRole).streams.filter(only_video=True, file_extension="mp4").first().url
+        video: pytube.YouTube=item.data(Qt.ItemDataRole.UserRole)
+        print(f'playing {video.title}')
+        stream_url=video.streams.filter(only_video=True, file_extension="mp4").first().url
         media_content = QUrl.fromUserInput(stream_url)
-        video = item.data(Qt.ItemDataRole.UserRole)  # Retrieve the video object from the item
-        if video:
-            stream_url = video.streams.filter(only_video=True, file_extension="mp4").first().url
 
         self.video_player.setSource(media_content)
         self   .video_player.setVideoOutput(self.video_widget)
         self.video_player.play()
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
