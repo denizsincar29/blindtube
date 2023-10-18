@@ -1,11 +1,11 @@
 import sys
 from PyQt6.QtGui import QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QLabel
-from PyQt6.QtMultimedia import QMediaPlayer
+from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QVideoWidget
-from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtCore import Qt, QUrl, pyqtSlot
 import pytube
-import requests
+#from webbrowser import open as wopen
 
 class YouTubePlayer(QMainWindow):
     def __init__(self):
@@ -27,11 +27,27 @@ class YouTubePlayer(QMainWindow):
         layout.addWidget(self.results_list)
 
         # Video player widget
+        self.audio_output=QAudioOutput()
         self.video_player = QMediaPlayer()
+        self.video_player.setAudioOutput(self.audio_output)
+        #self.video_player.mediaStatusChanged.connect()
         self.video_widget = QVideoWidget()
         layout.addWidget(self.video_widget)
 
         self.results = {}
+        # self.video_player.mediaStatusChanged.connect(self.handleStateChange)
+
+    """"""
+    @pyqtSlot(QMediaPlayer.MediaStatus)
+    def handleStateChange(self, state):
+        if state == QMediaPlayer.mediaStatus.:
+            print("Playing")
+        elif state == QMediaPlayer.State.PausedState:
+            print("Paused")
+        elif state == QMediaPlayer.State.StoppedState:
+            print("Stopped")
+    """"""
+
 
     def search(self):
         self.results_list.clear()
@@ -49,9 +65,11 @@ class YouTubePlayer(QMainWindow):
     def play_video(self, item: QListWidgetItem):
         video: pytube.YouTube=item.data(Qt.ItemDataRole.UserRole)
         print(f'playing {video.title}')
-        stream_url=video.streams.filter(only_video=True, file_extension="mp4").first().url
+        stream_url=video.streams.filter(only_video=False, only_audio=False, file_extension="mp4").first().url
+        #wopen(stream_url)
         media_content = QUrl.fromUserInput(stream_url)
-
+        if self.video_player.isPlaying():
+            self.video_player.stop()
         self.video_player.setSource(media_content)
         self   .video_player.setVideoOutput(self.video_widget)
         self.video_player.play()
