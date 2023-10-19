@@ -35,6 +35,7 @@ class YouTubePlayer(QMainWindow):
         #self.video_player.mediaStatusChanged.connect()
         self.video_widget = QVideoWidget()
         self.video_widget.setMinimumHeight(400)
+        self.video_widget.show()
         layout.addWidget(self.video_widget)
 
         self.worker = Worker()
