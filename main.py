@@ -3,14 +3,16 @@ from PyQt6.QtGui import QIcon, QImage, QPixmap
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QLabel
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QVideoWidget
-from PyQt6.QtCore import Qt, QUrl, pyqtSlot
-import pytube
+from PyQt6.QtCore import Qt, QUrl, pyqtSlot, pyqtSignal, QThread
+from tube import Worker
 #from webbrowser import open as wopen
 
 class YouTubePlayer(QMainWindow):
+    searchsig=pyqtSignal(str)
+    urlsig=pyqtSignal(int)
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("YouTube Player")
+        self.setWindowTitle("YouTube")
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout()
@@ -34,7 +36,15 @@ class YouTubePlayer(QMainWindow):
         self.video_widget = QVideoWidget()
         layout.addWidget(self.video_widget)
 
-        self.results = {}
+        self.worker = Worker()
+        self.worker_thread = QThread()
+        self.worker.search.connect(self.getsearch)
+        self.worker.url.connect(self.geturl)
+        self.searchsig.connect(self.worker.searchthr)
+        self.urlsig.connect(self.worker.get_url)
+        self.worker.moveToThread(self.worker_thread)
+        self.worker_thread.start()
+
         # self.video_player.mediaStatusChanged.connect(self.handleStateChange)
 
     """
@@ -48,26 +58,28 @@ class YouTubePlayer(QMainWindow):
             print("Stopped")
     """
 
+    @pyqtSlot(list)
+    def getsearch(self, search_results):
+        for i, video in enumerate(search_results):
+            item = QListWidgetItem(video)
+            item.setData(Qt.ItemDataRole.UserRole, i)  # Store the video object in the item
+            self.results_list.addItem(item)
+
+
 
     def search(self):
         self.results_list.clear()
-        self.results.clear()
-
         query = self.search_field.text()
         # nvda speaks: searching for query
-        search_results = pytube.Search(query).results
-
-        for video in search_results:
-            item = QListWidgetItem(video.title)
-            item.setData(Qt.ItemDataRole.UserRole, video)  # Store the video object in the item
-            self.results_list.addItem(item)
+        self.searchsig.emit(query)
 
     def play_video(self, item: QListWidgetItem):
         self.video_player.stop()
-        video: pytube.YouTube=item.data(Qt.ItemDataRole.UserRole)
-        print(f'playing {video.title}')
-        stream_url=video.streams.filter(only_video=False, only_audio=False, file_extension="mp4").first().url
-        #wopen(stream_url)
+        vid: int=item.data(Qt.ItemDataRole.UserRole)
+        self.urlsig.emit(vid)
+
+    @pyqtSlot(str)
+    def geturl(self, stream_url):
         media_content = QUrl.fromUserInput(stream_url)
         self.video_player.setSource(media_content)
         self   .video_player.setVideoOutput(self.video_widget)
