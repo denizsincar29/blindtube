@@ -1,0 +1,15 @@
+Unexpected renderer encountered.
+Renderer name: dict_keys(['lockupViewModel'])
+Search term: chick corea
+Please open an issue at https://github.com/pytube/pytube/issues and provide this log output.
+Traceback (most recent call last):
+  File "C:\Users\User\files\pythons\blindtube\tube.py", line 15, in searchthr
+    self.tubes=pytube.Search(query).results
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\site-packages\pytube\contrib\search.py", line 62, in results
+    videos, continuation = self.fetch_and_parse()
+                           ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\site-packages\pytube\contrib\search.py", line 218, in fetch_and_parse
+    vid_renderer = reelItemDict['reelItemRenderer']
+                   ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+KeyError: 'reelItemRenderer'

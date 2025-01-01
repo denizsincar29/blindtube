@@ -1,11 +1,10 @@
 import sys
-from PyQt6.QtGui import QIcon, QImage, QPixmap, QAction
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QLabel
-from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
-from PyQt6.QtMultimediaWidgets import QVideoWidget
-from PyQt6.QtCore import Qt, QUrl, pyqtSlot, pyqtSignal, QThread
+from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem
+from PyQt6.QtCore import Qt, pyqtSlot, pyqtSignal, QThread, QTimer
+
 from tube import Worker
-#from webbrowser import open as wopen
+from pyvidplayer2 import VideoPyQT
 
 class YouTubePlayer(QMainWindow):
     searchsig=pyqtSignal(str)
@@ -17,6 +16,10 @@ class YouTubePlayer(QMainWindow):
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout()
         central_widget.setLayout(layout)
+        self.video_player: VideoPyQT = None
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update)
+        self.timer.start(16)
         self.add_ui(layout)
         self.w_thread()
         self.add_menubar()
@@ -32,12 +35,8 @@ class YouTubePlayer(QMainWindow):
         self.results_list.itemActivated.connect(self.play_video)
         layout.addWidget(self.results_list)
         # Video player widget
-        self.audio_output=QAudioOutput()
-        self.video_player = QMediaPlayer()
-        self.video_player.setAudioOutput(self.audio_output)
-        #self.video_player.mediaStatusChanged.connect()
-        self.video_widget = QVideoWidget()
-        self.video_widget.setMinimumHeight(400)
+        self.video_widget = QWidget()
+        self.video_widget.setMinimumSize(480, 360)
         self.video_widget.show()
         layout.addWidget(self.video_widget)
 
@@ -45,7 +44,7 @@ class YouTubePlayer(QMainWindow):
         self.worker = Worker()
         self.worker_thread = QThread()
         self.worker.search.connect(self.getsearch)
-        self.worker.url.connect(self.geturl)
+        self.worker.url.connect(self.get_url)
         self.searchsig.connect(self.worker.searchthr)
         self.urlsig.connect(self.worker.get_url)
         self.worker.moveToThread(self.worker_thread)
@@ -60,33 +59,56 @@ class YouTubePlayer(QMainWindow):
         self.add_item(fileMenu,  "Download only the audio track", "Ctrl+Shift+D", "download the video")
         self.add_item(fileMenu, "&Exit", "Ctrl+Q", "Exit the application", QApplication.instance().quit)
         self.add_item(playbackMenu, "Play / Pause", "Ctrl+Space", callback=self.playpause)
-        self.add_item(playbackMenu, "Forward 5 seconds", "Ctrl+Right", callback=lambda: self.video_player.setPosition(self.video_player.position()+5000))
-        self.add_item(playbackMenu, "Backward 5 seconds", "Ctrl+Left", callback=lambda: self.video_player.setPosition(self.video_player.position()-5000))
-        # how to change volume of qt media player?
-        self.add_item(playbackMenu, "Volume up", "Ctrl+Up")
-        self.add_item(playbackMenu, "Volume down", "Ctrl+Down")
-
+        self.add_item(playbackMenu, "Forward 5 seconds", "Ctrl+Right", callback= lambda: self.seek(True))
+        self.add_item(playbackMenu, "Backward 5 seconds", "Ctrl+Left", callback=lambda: self.seek(False))
+        self.add_item(playbackMenu, "Volume up", "Ctrl+Up", callback=lambda: self.volume(True))
+        self.add_item(playbackMenu, "Volume down", "Ctrl+Down", callback=lambda: self.volume(False))
 
     def add_item(self, menu, text, shortcut=None, discryption=None, callback=None):
         act = QAction(QIcon('exit.png'), text, self)
-        if shortcut is not None: act.setShortcut(shortcut)
-        if discryption is not None: act.setStatusTip(discryption)
-        if callback is not None: act.triggered.connect(callback)
+        if shortcut is not None:
+            act.setShortcut(shortcut)
+        if discryption is not None:
+            act.setStatusTip(discryption)
+        if callback is not None:
+            act.triggered.connect(callback)
         menu.addAction(act)
 
+    def update(self):
+        if self.video_player is not None:
+            self.video_player.draw(self.video_widget, (0,0))
+
     def playpause(self):
-        if self.video_player.isPlaying():
+        if self.video_player is None:
+            return
+        if not self.video_player.paused:
             self.video_player.pause()
-        elif self.video_player.source().isValid():
+        else:
             self.video_player.play()
 
+    def seek(self, right: bool):
+        if self.video_player is None:
+            return
+        time = 5.0 if right else -5.0
+        self.video_player.seek(time = time, relative = True)
 
+    def volume(self, up: bool):
+        if self.video_player is None:
+            return
+        volume_step = 0.1 if up else -0.1
+        volume = self.video_player.get_volume()
+        volume += volume_step
+        if volume < 0:
+            volume = 0
+        elif volume > 1:
+            volume = 1
+        self.video_player.set_volume(volume_step)
 
     @pyqtSlot(list)
     def getsearch(self, search_results):
-        for i, video in enumerate(search_results):
+        for i, (video, url) in enumerate(search_results):
             item = QListWidgetItem(video)
-            item.setData(Qt.ItemDataRole.UserRole, i)  # Store the video object in the item
+            item.setData(Qt.ItemDataRole.UserRole, url)
             self.results_list.addItem(item)
 
     def search(self):
@@ -96,15 +118,20 @@ class YouTubePlayer(QMainWindow):
         self.searchsig.emit(query)
 
     def play_video(self, item: QListWidgetItem):
-        self.video_player.stop()
-        vid: int=item.data(Qt.ItemDataRole.UserRole)
-        self.urlsig.emit(vid)
+        if self.video_player is not None:
+            self.video_player.stop()
+            self.video_player.close()  # unload the video
+            self.video_player = None  # for update function to not draw the video
+        url = item.data(Qt.ItemDataRole.UserRole)
+        # play directly the video
+        self.video_player = VideoPyQT(url, 60, 1, youtube=True)
+        self.video_player.play()
 
+    # deprecated! Now the data won't pass through the worker
     @pyqtSlot(str)
-    def geturl(self, stream_url):
-        media_content = QUrl.fromUserInput(stream_url)
-        self.video_player.setSource(media_content)
-        self   .video_player.setVideoOutput(self.video_widget)
+    def get_url(self, stream_url):
+        print("warning! This method should not be automatically called! But it is called! It is a bug!")
+        self.video_player = VideoPyQT(stream_url, 60, 1, youtube=True)
         self.video_player.play()
 
 
