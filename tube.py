@@ -7,6 +7,7 @@ class Worker(QObject):
     search = Signal(list)
     url = Signal(str)
     status_message = Signal(str)
+    video_info = Signal(dict)
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -16,6 +17,25 @@ class Worker(QObject):
             'quiet': True,
             'no_warnings': True,
         }
+
+    def _format_info(self, entry):
+        title = entry.get('title', 'Unknown Title')
+        channel = entry.get('uploader', 'Unknown Channel')
+        duration = entry.get('duration')
+        video_id = entry.get('id')
+        url = entry.get('webpage_url') or f"https://www.youtube.com/watch?v={video_id}"
+
+        # Better format for screenreaders and blind users
+        info_str = f"{title} by {channel}"
+        if duration:
+            try:
+                m, s = divmod(int(duration), 60)
+                h, m = divmod(m, 60)
+                duration_str = f"{h:d}:{m:02d}:{s:02d}" if h > 0 else f"{m:d}:{s:02d}"
+                info_str += f" ({duration_str})"
+            except (ValueError, TypeError):
+                pass
+        return info_str, url
 
     @Slot(str)
     def searchthr(self, query: str):
@@ -33,25 +53,7 @@ class Worker(QObject):
                 info = ydl.extract_info(search_query, download=False)
                 if 'entries' in info:
                     self.results = info['entries']
-                    formatted_results = []
-                    for entry in self.results:
-                        title = entry.get('title', 'Unknown Title')
-                        channel = entry.get('uploader', 'Unknown Channel')
-                        duration = entry.get('duration')
-                        view_count = entry.get('view_count')
-                        video_id = entry.get('id')
-                        url = f"https://www.youtube.com/watch?v={video_id}"
-
-                        # Better format for screenreaders and blind users
-                        info_str = f"{title} by {channel}"
-                        if duration:
-                            m, s = divmod(int(duration), 60)
-                            h, m = divmod(m, 60)
-                            duration_str = f"{h:d}:{m:02d}:{s:02d}" if h > 0 else f"{m:d}:{s:02d}"
-                            info_str += f" ({duration_str})"
-
-                        formatted_results.append((info_str, url))
-
+                    formatted_results = [self._format_info(entry) for entry in self.results]
                     self.search.emit(formatted_results)
                     self.status_message.emit(f"Found {len(formatted_results)} results")
                 else:
@@ -62,12 +64,33 @@ class Worker(QObject):
                 self.status_message.emit(f"Search error: {str(e)}")
                 self.search.emit([])
 
-    @Slot(str, bool)
-    def download_video(self, url, audio_only=False):
+    @Slot(str)
+    def get_video_info(self, url: str):
+        print(f"Fetching info for: {url}")
+        opts = {
+            'format': 'best',
+            'quiet': True,
+            'extract_flat': True,
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            try:
+                info = ydl.extract_info(url, download=False)
+                info_str, final_url = self._format_info(info)
+                self.video_info.emit({"info": info_str, "url": final_url})
+            except Exception as e:
+                print(f"Info error: {e}")
+                self.status_message.emit(f"Error fetching video info: {str(e)}")
+
+    @Slot(str, bool, str)
+    def download_video(self, url, audio_only=False, download_dir=None):
         try:
-            with open('settings.json', 'r') as f:
-                settings = json.load(f)
-            download_dir = settings.get('download_directory', 'downloads/youtube')
+            if not download_dir:
+                try:
+                    with open('settings.json', 'r') as f:
+                        settings = json.load(f)
+                    download_dir = settings.get('download_directory', 'downloads/youtube')
+                except (FileNotFoundError, json.JSONDecodeError):
+                    download_dir = 'downloads/youtube'
 
             if not os.path.exists(download_dir):
                 os.makedirs(download_dir)
