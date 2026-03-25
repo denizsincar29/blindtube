@@ -1,3 +1,4 @@
 {
-    "download_directory": "downloads/youtube"
+    "download_directory": "downloads/",
+    "favorites": []
 }
