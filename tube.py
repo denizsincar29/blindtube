@@ -1,26 +1,101 @@
+import yt_dlp
 from PyQt6.QtCore import QThread, QObject, pyqtSignal as Signal, pyqtSlot as Slot
-import pytube
+import json
+import os
 
 class Worker(QObject):
-    search=Signal(list)
-    url=Signal(str)
+    search = Signal(list)
+    url = Signal(str)
+    status_message = Signal(str)
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.tubes=[]
+        self.results = []
+        self.ydl_opts = {
+            'format': 'best',
+            'quiet': True,
+            'no_warnings': True,
+        }
 
     @Slot(str)
     def searchthr(self, query: str):
-        print(query)
-        self.tubes=pytube.Search(query).results
-        self.search.emit([(i.title, f"https://youtube.com/watch?v={i.video_id}") for i in self.tubes])
+        print(f"Searching for: {query}")
+        search_opts = {
+            'format': 'best',
+            'quiet': True,
+            'extract_flat': True,
+            'force_generic_extractor': True,
+        }
+        with yt_dlp.YoutubeDL(search_opts) as ydl:
+            try:
+                # Search for 10 results
+                search_query = f"ytsearch10:{query}"
+                info = ydl.extract_info(search_query, download=False)
+                if 'entries' in info:
+                    self.results = info['entries']
+                    formatted_results = []
+                    for entry in self.results:
+                        title = entry.get('title', 'Unknown Title')
+                        channel = entry.get('uploader', 'Unknown Channel')
+                        duration = entry.get('duration')
+                        view_count = entry.get('view_count')
+                        video_id = entry.get('id')
+                        url = f"https://www.youtube.com/watch?v={video_id}"
 
-    # this is the old geturl method, from now on pyvidplayer2 will handle the youtube url itself
-    @Slot(int)
-    def get_stream(self, yt):
-        self.url.emit(self.tubes[yt].streams.filter(only_video=False, only_audio=False, file_extension="mp4").first().url)
+                        # Better format for screenreaders and blind users
+                        info_str = f"{title} by {channel}"
+                        if duration:
+                            m, s = divmod(int(duration), 60)
+                            h, m = divmod(m, 60)
+                            duration_str = f"{h:d}:{m:02d}:{s:02d}" if h > 0 else f"{m:d}:{s:02d}"
+                            info_str += f" ({duration_str})"
+
+                        formatted_results.append((info_str, url))
+
+                    self.search.emit(formatted_results)
+                    self.status_message.emit(f"Found {len(formatted_results)} results")
+                else:
+                    self.search.emit([])
+                    self.status_message.emit("No results found")
+            except Exception as e:
+                print(f"Search error: {e}")
+                self.status_message.emit(f"Search error: {str(e)}")
+                self.search.emit([])
+
+    @Slot(str, bool)
+    def download_video(self, url, audio_only=False):
+        try:
+            with open('settings.json', 'r') as f:
+                settings = json.load(f)
+            download_dir = settings.get('download_directory', 'downloads/youtube')
+
+            if not os.path.exists(download_dir):
+                os.makedirs(download_dir)
+
+            opts = {
+                'format': 'bestaudio/best' if audio_only else 'best',
+                'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
+                'quiet': True,
+            }
+            if audio_only:
+                opts['postprocessors'] = [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }]
+
+            self.status_message.emit("Downloading video..." if not audio_only else "Downloading audio...")
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([url])
+            self.status_message.emit("Download complete")
+        except Exception as e:
+            print(f"Download error: {e}")
+            self.status_message.emit(f"Download error: {str(e)}")
 
     # get the youtube com video url
     @Slot(int)
-    def get_url(self, yt):
-        self.url.emit(self.tubes[yt].url)
+    def get_url(self, index):
+        if 0 <= index < len(self.results):
+            video_id = self.results[index].get('id')
+            url = f"https://www.youtube.com/watch?v={video_id}"
+            self.url.emit(url)

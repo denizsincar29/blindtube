@@ -1,2 +1,9 @@
 PyQt6
-git+https://github.com/kszczepanskidev/pytube
+yt-dlp
+accessible-output3
+pyvidplayer2
+pysubs2
+sounddevice
+opencv-python
+numpy
+pygame-ce

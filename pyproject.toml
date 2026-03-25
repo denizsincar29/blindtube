@@ -1,15 +1,17 @@
 [project]
 name = "blindtube"
 version = "0.1.0"
-description = "Add your description here"
+description = "A YouTube player designed for accessibility"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "pyqt6>=6.8.1",
-    "pytube",
-    "pyvidplayer2>=0.9.25",
-    "yt-dlp>=2025.3.31",
+    "PyQt6>=6.8.1",
+    "yt-dlp>=2026.3.17",
+    "pyvidplayer2>=0.9.31",
+    "accessible-output3>=0.1.2",
+    "sounddevice>=0.5.5",
+    "pysubs2>=1.8.1",
+    "opencv-python>=4.13.0.92",
+    "numpy>=2.4.3",
+    "pygame-ce>=2.5.7",
 ]
-
-[tool.uv.sources]
-pytube = { git = "https://github.com/kszczepanskidev/pytube" }
