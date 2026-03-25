@@ -7,3 +7,4 @@ sounddevice
 opencv-python
 numpy
 pygame-ce
+click
