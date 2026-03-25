@@ -1,6 +1,10 @@
 # Task
-Read the web about how to search youtube and download videos using python in 2026 and stream on the qt main window. Then fix the existing python code that probably worked a few years ago but is now broken due to changes in the youtube API or other libraries.
-Implement accessible-output3 (fork of accessible-output2) to provide screenreader messages for every action: searching for xxx, found x results, downloading video, download complete, streaming video, etc. Make sure to handle exceptions and provide appropriate messages for errors as well.
-In the list of search results, display the video title and channel name.
-
-Currently, search functionality is working, but video doesn't play. Pyvidplayer2 supports youtube after I created an issue, but IDK what library it uses.
+1. The downloads folder must be %userprofile%/downloads/youtube by default, or ./downloads if the former is not accessible.
+2. When pressing enter on a search result, screenreader should say loading xxx title. And when it's starts playing, it mustn't say streaming (long title), but just "playing".
+3. Add context menu to the search results to play, download, or copy the link, etc.
+4. Favorites: add an item in the context menu and the menubar to ad the current video to favorites. They are listed when you start the app in the search results list, or if you press escape (menu item home) to clear the search and list the favorites. They can be removed from the favorites list by right-clicking and selecting remove from favorites. There must be a menu item to download all favorites as video or audio.
+5. Play a url by typing it in the search box and pressing enter. It should be added to the search results list with a thumbnail and title, and start playing immediately.
+6. Command line parsing with click: make up your own syntax for the command line arguments, but it should allow the user to specify a url to play, a search query to search and play the first result, and a flag to download the first search result instead of playing it. For example:
+   - `uv run main.py --play https://www.youtube.com/watch?v=dQw4w9WgXcQ`
+   - `uv run main.py --search "never gonna give you up" --play`
+   - `uv run main.py --search "never gonna give you up" --download`

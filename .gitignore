@@ -1,3 +1,5 @@
+downloads/
+settings.json
 *.dll
 /dll_downloader.py
 __pycache__/
