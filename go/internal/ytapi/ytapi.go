@@ -234,24 +234,47 @@ func bestAudioOnlyFormat(v *youtube.Video) (*youtube.Format, error) {
 	return best, nil
 }
 
-// ResolveStreamURL returns the time-limited googlevideo CDN URL for the
-// given video id, used by the /stream/<id> proxy handler in server.go. It
-// re-resolves on every call (URLs expire and are IP-pinned to whichever
-// client fetched them, which matters when a proxy is configured).
-func (c *Client) ResolveStreamURL(id string) (streamURL string, mimeType string, err error) {
+// ResolveVideoURL returns the time-limited googlevideo CDN URL for the
+// best muxed (video+audio) format. Used by both the /stream/<id> proxy
+// handler (playback) and the /api/download/video web handler.
+// Re-resolves on every call since these URLs expire and are IP-pinned.
+func (c *Client) ResolveVideoURL(id string) (streamURL, mimeType, filename string, err error) {
 	v, err := c.yt.GetVideo(id)
 	if err != nil {
-		return "", "", fmt.Errorf("fetching video: %w", err)
+		return "", "", "", fmt.Errorf("fetching video: %w", err)
 	}
 	f, err := bestPlaybackFormat(v)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	u, err := c.yt.GetStreamURL(v, f)
 	if err != nil {
-		return "", "", fmt.Errorf("resolving stream url: %w", err)
+		return "", "", "", fmt.Errorf("resolving stream url: %w", err)
 	}
-	return u, f.MimeType, nil
+	ext := ".mp4"
+	if strings.Contains(f.MimeType, "webm") {
+		ext = ".webm"
+	}
+	return u, f.MimeType, downloader.SanitizeFilename(v.Title) + ext, nil
+}
+
+// ResolveAudioURL returns the time-limited CDN URL for the best audio-only
+// format, used by the /api/download/audio web handler.
+func (c *Client) ResolveAudioURL(id string) (streamURL, mimeType, filename string, err error) {
+	v, err := c.yt.GetVideo(id)
+	if err != nil {
+		return "", "", "", fmt.Errorf("fetching video: %w", err)
+	}
+	f, err := bestAudioOnlyFormat(v)
+	if err != nil {
+		return "", "", "", err
+	}
+	u, err := c.yt.GetStreamURL(v, f)
+	if err != nil {
+		return "", "", "", fmt.Errorf("resolving audio url: %w", err)
+	}
+	ext := extensionForMime(f.MimeType)
+	return u, f.MimeType, downloader.SanitizeFilename(v.Title) + ext, nil
 }
 
 // HTTPDo runs req through the same proxy-aware http.Client used for

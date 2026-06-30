@@ -3,98 +3,133 @@ package ui
 const appJS = `
 'use strict';
 
-// All calls go straight through glaze's Bind bridge:
-// window.blindtube_<snake_case method>(args...) returns a Promise, backed
-// directly by a Go method on Service (internal/ui/service.go). Only
-// playback bytes (internal/ui/server.go's /stream/<id>) go over a normal
-// HTTP request, since Bind has no streaming-bytes primitive.
+// All communication with Go is plain JSON over HTTP (fetch).
+// No glaze Bind. Same code runs in the desktop WebView and in a real
+// browser on tube.denizsincar.ru.
 
 function $(id) { return document.getElementById(id); }
 
+// ---------- Live-region announcer ----------
+// Uses two regions so rapid sequential announcements still fire:
+// swap between them with a tiny delay to force a re-read.
+let _announceTarget = 0;
 function announce(msg, urgent) {
-  var el = urgent ? $('alert-live') : $('status-live');
+  const el = urgent ? $('alert-live') : $('status-live');
   el.textContent = '';
-  window.setTimeout(function () { el.textContent = msg; }, 30);
+  setTimeout(() => { el.textContent = msg; }, 30);
 }
 
-async function call(fnName) {
-  const fn = window['blindtube_' + fnName];
-  if (!fn) throw new Error('not available: ' + fnName);
-  const args = Array.prototype.slice.call(arguments, 1);
-  return await fn.apply(null, args);
+// ---------- API wrapper ----------
+async function api(method, path, body) {
+  const opts = { method, headers: {} };
+  if (body !== undefined) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const r = await fetch(path, opts);
+  if (r.status === 204) return null;
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
 }
 
+// ---------- Helpers ----------
 function fmtDuration(sec) {
   sec = Math.max(0, Math.floor(sec || 0));
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
-  const pad = n => String(n).padStart(2, '0');
-  return h > 0 ? (h + ':' + pad(m) + ':' + pad(s)) : (m + ':' + pad(s));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const p = n => String(n).padStart(2, '0');
+  return h ? (h + ':' + p(m) + ':' + p(s)) : (m + ':' + p(s));
 }
 
-// ============== App state ==============
-
-let results = [];          // currently shown list (search results or favorites)
+// ---------- App state ----------
+let results = [];
 let isFavoritesView = false;
-let currentVideo = null;   // last VideoInfo from get_video_info
+let currentVideo = null;
 let searchPending = false;
-let currentQuery = '';
 let loadingMore = false;
+let currentQuery = '';
+let appMode = 'desktop'; // filled in from /api/mode on load
+let favoriteURLs = new Set(); // known favorites for quick toggle label
 
 const player = $('video-player');
 const resultsList = $('results-list');
 const searchField = $('search-field');
 
-// ============== Screens ==============
+// ---------- Init ----------
+async function init() {
+  try {
+    const m = await api('GET', '/api/mode');
+    appMode = m.mode;
+  } catch (_) {}
+  if (appMode === 'web') {
+    // Hide desktop-only controls.
+    document.querySelectorAll('.desktop-only').forEach(el => el.hidden = true);
+    // In web mode downloads are browser file downloads, change labels.
+    $('nav-download-video').textContent = 'Download Video (Ctrl+D)';
+    $('nav-download-audio').textContent = 'Download Audio (Ctrl+Shift+D)';
+  }
+  await loadFavoriteURLs();
+  await showFavorites(); // home screen = favorites, same as Python version
 
-function showScreen(id) {
-  ['screen-info', 'screen-settings'].forEach(function (s) {
-    $(s).hidden = (s !== id);
-  });
+  // CLI args passed via query string from the desktop main.go:
+  // ?url=<id_or_url>  or  ?search=<query>
+  const params = new URLSearchParams(location.search);
+  if (params.get('url')) {
+    searchField.value = params.get('url');
+    await searchAction();
+  } else if (params.get('search')) {
+    searchField.value = params.get('search');
+    await searchAction();
+  }
+
+  searchField.focus();
+  announce('BlindTube ready. Type a search query and press Enter.');
 }
 
-function closeDialogs() {
-  showScreen(null);
-  resultsList.focus();
+async function loadFavoriteURLs() {
+  if (appMode === 'web') return;
+  try {
+    const favs = await api('GET', '/api/favorites') || [];
+    favoriteURLs = new Set(favs.map(f => f.url));
+  } catch (_) {}
 }
 
-// ============== Results list ==============
-
+// ---------- Results list ----------
 function renderResults() {
   resultsList.innerHTML = '';
-  results.forEach(function (r, i) {
+  results.forEach((r, i) => {
     const li = document.createElement('li');
     li.id = 'result-' + i;
     li.setAttribute('role', 'option');
     li.setAttribute('tabindex', '-1');
     li.dataset.index = String(i);
-    const duration = r.duration ? ' (' + fmtDuration(r.duration) + ')' : '';
-    li.textContent = r.title + ' by ' + (r.channel || 'Unknown') + duration;
-    li.addEventListener('click', function () { selectResult(i, true); });
-    li.addEventListener('dblclick', function () { playResult(i); });
+    const dur = r.duration ? ' (' + fmtDuration(r.duration) + ')' : '';
+    li.textContent = r.title + ' by ' + (r.channel || 'Unknown') + dur;
+    li.addEventListener('click', () => selectResult(i, true));
+    li.addEventListener('dblclick', () => playResult(i));
+    li.addEventListener('contextmenu', e => { e.preventDefault(); openActionsMenu(i, e.clientX, e.clientY); });
     resultsList.appendChild(li);
   });
   if (results.length > 0) selectResult(0, false);
 }
 
 function selectResult(index, focus) {
-  const items = resultsList.querySelectorAll('li');
-  items.forEach(function (li, i) {
+  resultsList.querySelectorAll('li').forEach((li, i) => {
     li.setAttribute('aria-selected', i === index ? 'true' : 'false');
   });
   resultsList.setAttribute('aria-activedescendant', 'result-' + index);
-  if (focus && items[index]) items[index].scrollIntoView({ block: 'nearest' });
+  const item = $('result-' + index);
+  if (item && focus) item.scrollIntoView({ block: 'nearest' });
 }
 
 function selectedIndex() {
-  const active = resultsList.querySelector('li[aria-selected="true"]');
-  return active ? parseInt(active.dataset.index, 10) : -1;
+  const a = resultsList.querySelector('li[aria-selected="true"]');
+  return a ? parseInt(a.dataset.index, 10) : -1;
 }
 
-resultsList.addEventListener('keydown', function (e) {
+resultsList.addEventListener('keydown', e => {
   const items = resultsList.querySelectorAll('li');
-  if (items.length === 0) return;
+  if (!items.length) return;
   let idx = selectedIndex();
   if (e.key === 'ArrowDown') {
     e.preventDefault();
@@ -108,298 +143,368 @@ resultsList.addEventListener('keydown', function (e) {
   } else if (e.key === 'Enter') {
     e.preventDefault();
     if (idx >= 0) playResult(idx);
+  } else if (e.key === 'Application' || (e.shiftKey && e.key === 'F10')) {
+    e.preventDefault();
+    if (idx >= 0) openActionsMenu(idx);
   }
 });
 
-// Infinite scroll: load 10 more results once the user is near the bottom
-// of the list, mirroring _on_row_changed's "near the end" trigger in the
-// Python version.
-resultsList.addEventListener('scroll', function () {
+resultsList.addEventListener('scroll', () => {
   if (isFavoritesView) return;
-  const nearBottom = resultsList.scrollTop + resultsList.clientHeight >= resultsList.scrollHeight - 40;
-  if (nearBottom) maybeLoadMore();
+  if (resultsList.scrollTop + resultsList.clientHeight >= resultsList.scrollHeight - 60)
+    maybeLoadMore();
 });
 
 async function maybeLoadMore() {
   if (loadingMore || searchPending || isFavoritesView || !currentQuery) return;
   loadingMore = true;
   try {
-    const more = await call('search_more');
-    if (more && more.length > 0) {
+    const more = await api('POST', '/api/search/more') || [];
+    if (more.length > 0) {
       results = results.concat(more);
       renderResults();
     }
-  } catch (err) {
-    console.error(err);
-  } finally {
-    loadingMore = false;
-  }
+  } catch (err) { console.error(err); }
+  finally { loadingMore = false; }
 }
 
-// ============== Search ==============
+// ---------- Context / actions menu (replaces Qt's right-click menu) ----------
+// Rendered as a floating <ul> positioned near the cursor (or at the item
+// position for keyboard). NVDA reads this as an ARIA menu.
+let activeMenu = null;
 
-$('search-form').addEventListener('submit', async function (e) {
-  e.preventDefault();
-  await searchAction();
-});
+function closeActionsMenu() {
+  if (activeMenu) { activeMenu.remove(); activeMenu = null; }
+}
+
+function openActionsMenu(index, x, y) {
+  closeActionsMenu();
+  const r = results[index];
+  if (!r) return;
+
+  const isFav = favoriteURLs.has(r.url);
+
+  const items = [
+    { label: 'Play',                     action: () => playResult(index) },
+    { label: 'View Description',         action: () => viewVideoInfo(index) },
+    { label: 'Download Video',           action: () => downloadOne(r.url, false) },
+    { label: 'Download Audio',           action: () => downloadOne(r.url, true) },
+    { label: 'Copy link',                action: () => copyLink(r.url) },
+    {
+      label: isFav ? 'Remove from Favorites' : 'Add to Favorites',
+      action: () => isFav ? removeFromFavorites(r.url) : addToFavorites(index)
+    },
+  ];
+
+  const menu = document.createElement('ul');
+  menu.setAttribute('role', 'menu');
+  menu.setAttribute('aria-label', 'Video actions');
+  menu.className = 'context-menu';
+
+  items.forEach((it, i) => {
+    const li = document.createElement('li');
+    li.setAttribute('role', 'menuitem');
+    li.setAttribute('tabindex', i === 0 ? '0' : '-1');
+    li.textContent = it.label;
+    li.addEventListener('click', () => { closeActionsMenu(); it.action(); });
+    li.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); closeActionsMenu(); it.action(); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); (li.nextElementSibling || menu.firstElementChild).focus(); }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); (li.previousElementSibling || menu.lastElementChild).focus(); }
+      if (e.key === 'Escape')    { e.preventDefault(); closeActionsMenu(); resultsList.focus(); }
+    });
+    menu.appendChild(li);
+  });
+
+  // Position near cursor if coordinates given, else near the selected item.
+  if (x !== undefined && y !== undefined) {
+    menu.style.left = x + 'px';
+    menu.style.top  = y + 'px';
+  } else {
+    const item = $('result-' + index);
+    if (item) {
+      const rect = item.getBoundingClientRect();
+      menu.style.left = rect.left + 'px';
+      menu.style.top  = (rect.bottom + 4) + 'px';
+    }
+  }
+
+  document.body.appendChild(menu);
+  activeMenu = menu;
+  menu.firstElementChild.focus();
+
+  // Close when clicking outside.
+  setTimeout(() => document.addEventListener('click', closeActionsMenu, { once: true }), 0);
+}
+
+// ---------- Search ----------
+$('search-form').addEventListener('submit', async e => { e.preventDefault(); await searchAction(); });
 
 async function searchAction() {
   const query = searchField.value.trim();
   if (!query) return;
   isFavoritesView = false;
-  searchPending = true;
   currentQuery = query;
+  searchPending = true;
   announce('Searching for ' + query + '…');
   try {
-    results = await call('search', query) || [];
+    results = await api('POST', '/api/search', { q: query }) || [];
     renderResults();
-    announce(results.length + ' results found.');
-  } catch (err) {
-    announce('Search failed: ' + err.message, true);
-  } finally {
-    searchPending = false;
-  }
+    announce(results.length + ' results.');
+  } catch (err) { announce('Search failed: ' + err.message, true); }
+  finally { searchPending = false; }
 }
 
-// ============== Playback ==============
-
+// ---------- Playback ----------
 async function playResult(index) {
   const r = results[index];
-  if (!r) return;
-  await playByURL(r.url, r.title);
+  if (r) await playByURL(r.url, r.title);
 }
 
 async function playByURL(urlOrID, knownTitle) {
   announce('Loading ' + (knownTitle || urlOrID) + '…');
   try {
-    currentVideo = await call('get_video_info', urlOrID);
+    currentVideo = await api('GET', '/api/video?id=' + encodeURIComponent(urlOrID));
     player.src = currentVideo.streamPath;
     $('now-playing').textContent = currentVideo.title + ' — ' + currentVideo.channel;
-    await player.play().catch(function () { /* autoplay may need a user gesture; controls remain usable */ });
-    announce('Playing ' + currentVideo.title + ' by ' + currentVideo.channel + ', duration ' + fmtDuration(currentVideo.duration) + '.');
-  } catch (err) {
-    announce('Could not play video: ' + err.message, true);
-  }
+    await player.play().catch(() => {});
+    announce('Playing ' + currentVideo.title + ' by ' + currentVideo.channel + ', ' + fmtDuration(currentVideo.duration) + '.');
+  } catch (err) { announce('Could not play: ' + err.message, true); }
 }
 
 function playpause() {
-  if (!player.src) { announce('Nothing is loaded.'); return; }
-  if (player.paused) {
-    player.play();
-    announce('Playing.');
-  } else {
-    player.pause();
-    announce('Paused.');
-  }
+  if (!player.src) { announce('Nothing loaded.'); return; }
+  if (player.paused) { player.play(); announce('Playing.'); }
+  else { player.pause(); announce('Paused.'); }
 }
 
-function seek(forward) {
+function seek(fwd) {
   if (!player.src) return;
-  player.currentTime = Math.max(0, Math.min(player.duration || Infinity, player.currentTime + (forward ? 5 : -5)));
+  player.currentTime = Math.max(0, Math.min(player.duration || Infinity, player.currentTime + (fwd ? 5 : -5)));
   announcePosition();
 }
 
-function volume(up) {
+function adjustVolume(up) {
   if (!player.src) return;
   player.volume = Math.max(0, Math.min(1, player.volume + (up ? 0.1 : -0.1)));
-  announce('Volume ' + Math.round(player.volume * 100) + ' percent.');
+  announce('Volume ' + Math.round(player.volume * 100) + '%.');
 }
 
 function announcePosition() {
-  if (!player.src) { announce('Nothing is loaded.'); return; }
+  if (!player.src) { announce('Nothing loaded.'); return; }
   announce(fmtDuration(player.currentTime) + ' of ' + fmtDuration(player.duration) + '.');
 }
 
-// ============== Downloads ==============
+// ---------- Downloads ----------
+async function downloadOne(urlOrID, audioOnly) {
+  if (!urlOrID) { announce('Select a video first.', true); return; }
+  const endpoint = audioOnly ? '/api/download/audio' : '/api/download/video';
+  const url = endpoint + '?id=' + encodeURIComponent(urlOrID);
 
-async function downloadVideoAction() {
-  const target = currentVideo ? currentVideo.url : (results[selectedIndex()] || {}).url;
-  if (!target) { announce('Select a video first.', true); return; }
-  announce('Downloading video, this may take a while…');
-  try {
-    const path = await call('download_video', target);
-    announce('Downloaded: ' + path);
-  } catch (err) {
-    announce('Download failed: ' + err.message, true);
+  if (appMode === 'web') {
+    // Browser download: just navigate to the endpoint.
+    announce('Starting download…');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    announce('Download started. Check your browser downloads.');
+  } else {
+    // Desktop: Go saves to download dir, returns path.
+    announce('Downloading, please wait…');
+    try {
+      const res = await api('GET', url);
+      announce('Saved to ' + res.path);
+    } catch (err) { announce('Download failed: ' + err.message, true); }
   }
 }
 
-async function downloadAudioAction() {
-  const target = currentVideo ? currentVideo.url : (results[selectedIndex()] || {}).url;
-  if (!target) { announce('Select a video first.', true); return; }
-  announce('Downloading audio…');
-  try {
-    const path = await call('download_audio', target);
-    announce('Downloaded: ' + path);
-  } catch (err) {
-    announce('Download failed: ' + err.message, true);
-  }
-}
-
-// ============== Favorites ==============
-
-async function addCurrentToFavorites() {
+function currentTargetURL() {
   const r = results[selectedIndex()];
-  const target = currentVideo || r;
-  if (!target) { announce('Select a video first.', true); return; }
-  const info = target.title ? (target.title + ' by ' + target.channel) : (r.title + ' by ' + r.channel);
-  const url = target.url;
-  try {
-    const added = await call('add_favorite', { info: info, url: url });
-    announce(added ? 'Added to favorites.' : 'Already in favorites.');
-  } catch (err) {
-    announce('Could not add favorite: ' + err.message, true);
-  }
+  return (currentVideo && currentVideo.url) || (r && r.url) || null;
 }
 
+async function downloadVideoAction() { await downloadOne(currentTargetURL(), false); }
+async function downloadAudioAction() { await downloadOne(currentTargetURL(), true); }
+
+async function downloadAllFavorites(audioOnly) {
+  if (appMode === 'web') { announce('Download all favorites is a desktop-only feature.', true); return; }
+  announce('Starting batch download…');
+  try {
+    const results = await api('POST', '/api/favorites/download-all', { audio_only: audioOnly });
+    const ok = results.filter(r => !r.error).length;
+    const fail = results.filter(r => r.error).length;
+    announce('Done. ' + ok + ' downloaded' + (fail ? ', ' + fail + ' failed.' : '.'));
+  } catch (err) { announce('Batch download failed: ' + err.message, true); }
+}
+
+// ---------- Favorites ----------
 async function showFavorites() {
   searchField.value = '';
-  isFavoritesView = true;
   currentQuery = '';
+  isFavoritesView = true;
   try {
-    const favs = await call('favorites') || [];
-    results = favs.map(function (f) {
-      return { title: f.info, channel: '', duration: 0, url: f.url };
-    });
+    const favs = await api('GET', '/api/favorites') || [];
+    favoriteURLs = new Set(favs.map(f => f.url));
+    results = favs.map(f => ({ title: f.info, channel: '', duration: 0, url: f.url }));
     renderResults();
-    announce(results.length + ' favorites.');
-  } catch (err) {
-    announce('Could not load favorites: ' + err.message, true);
-  }
+    announce('Home. ' + results.length + ' favorites.');
+  } catch (err) { announce('Could not load favorites: ' + err.message, true); }
 }
 
-// ============== Video info / description ==============
+async function addToFavorites(index) {
+  if (appMode === 'web') { announce('Favorites are a desktop-only feature.', true); return; }
+  const r = results[index !== undefined ? index : selectedIndex()];
+  const target = r || currentVideo;
+  if (!target) { announce('Select a video first.', true); return; }
+  const info = target.title + (target.channel ? ' by ' + target.channel : '');
+  const url  = target.url;
+  try {
+    const res = await api('POST', '/api/favorites', { info, url });
+    if (res.added) { favoriteURLs.add(url); announce('Added to favorites.'); }
+    else announce('Already in favorites.');
+  } catch (err) { announce('Could not add favorite: ' + err.message, true); }
+}
 
-async function viewVideoInfo() {
-  const r = results[selectedIndex()];
-  const target = (currentVideo && currentVideo.url === (r || {}).url) ? currentVideo : null;
-  const urlOrID = target ? target.url : (r ? r.url : (currentVideo ? currentVideo.url : null));
+async function removeFromFavorites(url) {
+  if (appMode === 'web') return;
+  try {
+    await api('DELETE', '/api/favorites?url=' + encodeURIComponent(url));
+    favoriteURLs.delete(url);
+    await showFavorites(); // refresh list
+    announce('Removed from favorites.');
+  } catch (err) { announce('Could not remove favorite: ' + err.message, true); }
+}
+
+async function addCurrentToFavorites() { await addToFavorites(selectedIndex()); }
+
+function copyLink(url) {
+  const target = url || currentTargetURL();
+  if (!target) { announce('No video selected.', true); return; }
+  navigator.clipboard.writeText(target)
+    .then(() => announce('Link copied to clipboard.'))
+    .catch(() => {
+      // Fallback for WebView2 which may restrict clipboard API.
+      const ta = document.createElement('textarea');
+      ta.value = target;
+      ta.style.position = 'absolute'; ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+      announce('Link copied to clipboard.');
+    });
+}
+
+// ---------- Video info / description ----------
+async function viewVideoInfo(index) {
+  const r = results[index !== undefined ? index : selectedIndex()];
+  const urlOrID = (r && r.url) || (currentVideo && currentVideo.url);
   if (!urlOrID) { announce('Select a video first.', true); return; }
   try {
-    const info = await call('get_video_info', urlOrID);
+    const info = await api('GET', '/api/video?id=' + encodeURIComponent(urlOrID));
     currentVideo = info;
     $('info-heading').textContent = info.title;
+    $('info-channel').textContent = info.channel + ' · ' + fmtDuration(info.duration);
     $('info-description').value = info.description || '(no description)';
     showScreen('screen-info');
     $('info-close').focus();
-    announce('Showing description for ' + info.title + '.');
-  } catch (err) {
-    announce('Could not load video info: ' + err.message, true);
-  }
+    announce('Description for ' + info.title + '.');
+  } catch (err) { announce('Could not load video info: ' + err.message, true); }
 }
 
 $('info-close').addEventListener('click', closeDialogs);
 
-// ============== Settings ==============
-
+// ---------- Settings ----------
 async function openSettings() {
   try {
-    const s = await call('get_settings');
+    const s = await api('GET', '/api/settings');
     $('proxy-enabled').checked = !!(s.proxy && s.proxy.enabled);
     $('proxy-url').value = (s.proxy && s.proxy.url) || '';
     $('download-dir').value = s.download_directory || '';
     showScreen('screen-settings');
     $('proxy-enabled').focus();
-  } catch (err) {
-    announce('Could not load settings: ' + err.message, true);
-  }
+    announce('Settings dialog open.');
+  } catch (err) { announce('Could not load settings: ' + err.message, true); }
 }
 
-$('settings-form').addEventListener('submit', async function (e) {
+$('settings-form').addEventListener('submit', async e => {
   e.preventDefault();
   try {
-    await call('set_proxy', { enabled: $('proxy-enabled').checked, url: $('proxy-url').value.trim() });
-    await call('set_download_directory', $('download-dir').value.trim());
+    await api('POST', '/api/settings/proxy', { enabled: $('proxy-enabled').checked, url: $('proxy-url').value.trim() });
+    await api('POST', '/api/settings/download-dir', { dir: $('download-dir').value.trim() });
     announce('Settings saved.');
     closeDialogs();
-  } catch (err) {
-    announce('Could not save settings: ' + err.message, true);
-  }
+  } catch (err) { announce('Could not save settings: ' + err.message, true); }
 });
 
 $('settings-close').addEventListener('click', closeDialogs);
 
-// browse-download-dir: glaze/WebView has no folder picker primitive
-// exposed to JS, so this just focuses the text field for manual entry —
-// paste or type a path. (The Python version uses Qt's native folder
-// dialog; that native picker isn't available here without extra
-// platform-specific glue.)
-$('browse-download-dir').addEventListener('click', function () {
+$('browse-download-dir').addEventListener('click', () => {
   $('download-dir').focus();
-  announce('Type or paste the download directory path.');
+  announce('Type or paste a directory path.');
 });
 
-// ============== Menu buttons ==============
+// ---------- Screens ----------
+function showScreen(id) {
+  ['screen-info', 'screen-settings'].forEach(s => { $(s).hidden = (s !== id); });
+}
 
-$('nav-home').addEventListener('click', function () {
-  closeDialogs();
-  searchField.focus();
-});
-$('nav-download-video').addEventListener('click', downloadVideoAction);
-$('nav-download-audio').addEventListener('click', downloadAudioAction);
-$('nav-favorite').addEventListener('click', addCurrentToFavorites);
-$('nav-info').addEventListener('click', viewVideoInfo);
-$('nav-settings').addEventListener('click', openSettings);
+function closeDialogs() {
+  showScreen(null);
+  resultsList.focus();
+  announce('Closed.');
+}
 
-// ============== Keyboard shortcuts (match the Python version) ==============
+// ---------- Nav buttons ----------
+$('nav-home').addEventListener('click',              () => showFavorites());
+$('nav-download-video').addEventListener('click',    () => downloadVideoAction());
+$('nav-download-audio').addEventListener('click',    () => downloadAudioAction());
+$('nav-dl-all-video').addEventListener('click',      () => downloadAllFavorites(false));
+$('nav-dl-all-audio').addEventListener('click',      () => downloadAllFavorites(true));
+$('nav-favorite').addEventListener('click',          () => addCurrentToFavorites());
+$('nav-copy-link').addEventListener('click',         () => copyLink());
+$('nav-info').addEventListener('click',              () => viewVideoInfo());
+$('nav-settings').addEventListener('click',          () => openSettings());
 
-document.addEventListener('keydown', function (e) {
+// ---------- Keyboard shortcuts (match Python version) ----------
+document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     e.preventDefault();
-    if (!$('screen-info').hidden || !$('screen-settings').hidden) {
-      closeDialogs();
-    } else {
-      showFavorites();
-    }
+    if (!$('screen-info').hidden || !$('screen-settings').hidden) closeDialogs();
+    else showFavorites();
     return;
   }
+  if (e.key === 'p' || e.key === 'P') {
+    if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+      e.preventDefault(); announcePosition(); return;
+    }
+  }
   if (!e.ctrlKey) return;
-
   switch (e.key) {
-    case 'd':
-    case 'D':
+    case 'D': case 'd':
       e.preventDefault();
       if (e.shiftKey) downloadAudioAction(); else downloadVideoAction();
       break;
-    case 'f':
-    case 'F':
-      e.preventDefault();
-      addCurrentToFavorites();
-      break;
+    case 'F': case 'f':
+      e.preventDefault(); addCurrentToFavorites(); break;
     case 'Enter':
-      e.preventDefault();
-      viewVideoInfo();
-      break;
+      e.preventDefault(); viewVideoInfo(); break;
     case ' ':
-      e.preventDefault();
-      playpause();
-      break;
+      e.preventDefault(); playpause(); break;
     case 'ArrowRight':
-      e.preventDefault();
-      seek(true);
-      break;
+      e.preventDefault(); seek(true); break;
     case 'ArrowLeft':
-      e.preventDefault();
-      seek(false);
-      break;
+      e.preventDefault(); seek(false); break;
     case 'ArrowUp':
-      e.preventDefault();
-      volume(true);
-      break;
+      e.preventDefault(); adjustVolume(true); break;
     case 'ArrowDown':
-      e.preventDefault();
-      volume(false);
-      break;
-    case 'p':
-    case 'P':
-      e.preventDefault();
-      announcePosition();
-      break;
+      e.preventDefault(); adjustVolume(false); break;
   }
 });
 
-// ============== Init ==============
-
-searchField.focus();
-announce('BlindTube ready. Type a search query and press Enter.');
+// ---------- Boot ----------
+init();
 `

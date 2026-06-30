@@ -15,20 +15,25 @@ const indexHTML = `<!DOCTYPE html>
 <header class="app-header">
   <h1>BlindTube</h1>
   <nav aria-label="Main menu" class="menubar">
-    <button id="nav-home" type="button">Home (Esc)</button>
+    <button id="nav-home"           type="button">Home (Esc)</button>
     <button id="nav-download-video" type="button">Download Video (Ctrl+D)</button>
     <button id="nav-download-audio" type="button">Download Audio (Ctrl+Shift+D)</button>
-    <button id="nav-favorite" type="button">Add to Favorites (Ctrl+F)</button>
-    <button id="nav-info" type="button">Description (Ctrl+Enter)</button>
-    <button id="nav-settings" type="button">Settings</button>
+    <button id="nav-dl-all-video"   type="button" class="desktop-only">Download All Favorites as Video</button>
+    <button id="nav-dl-all-audio"   type="button" class="desktop-only">Download All Favorites as Audio</button>
+    <button id="nav-favorite"       type="button" class="desktop-only">Add to Favorites (Ctrl+F)</button>
+    <button id="nav-copy-link"      type="button">Copy Link</button>
+    <button id="nav-info"           type="button">Description (Ctrl+Enter)</button>
+    <button id="nav-settings"       type="button" class="desktop-only">Settings</button>
   </nav>
 </header>
 
-<div id="status-live" role="status" aria-live="polite" class="visually-hidden"></div>
-<div id="alert-live" role="alert" aria-live="assertive" class="visually-hidden"></div>
+<!-- Screen-reader live regions -->
+<div id="status-live" role="status" aria-live="polite"    class="visually-hidden"></div>
+<div id="alert-live"  role="alert"  aria-live="assertive" class="visually-hidden"></div>
 
 <main id="main-content">
 
+  <!-- ===================== SEARCH + PLAYER ===================== -->
   <section id="screen-player" aria-labelledby="search-heading">
     <h2 id="search-heading" class="visually-hidden">Search and play</h2>
 
@@ -47,17 +52,18 @@ const indexHTML = `<!DOCTYPE html>
     </div>
   </section>
 
-  <!-- ===================== DESCRIPTION / INFO DIALOG ===================== -->
+  <!-- ===================== DESCRIPTION DIALOG ===================== -->
   <section id="screen-info" class="dialog-screen" hidden aria-labelledby="info-heading">
     <h2 id="info-heading">Video Info</h2>
+    <p  id="info-channel" class="info-meta"></p>
     <button id="info-close" type="button">Close (Esc)</button>
     <h3>Description</h3>
-    <p class="comments-note">Comments are not yet implemented in the Go version — use the Python version (<code>python main.py</code>) if you need to read or browse comments.</p>
     <textarea id="info-description" readonly></textarea>
+    <p class="comments-note">Comments are not yet implemented — use the Python version (<code>python main.py</code>) if you need comments.</p>
   </section>
 
-  <!-- ===================== SETTINGS DIALOG ===================== -->
-  <section id="screen-settings" class="dialog-screen" hidden aria-labelledby="settings-heading">
+  <!-- ===================== SETTINGS DIALOG (desktop only) ===================== -->
+  <section id="screen-settings" class="dialog-screen desktop-only" hidden aria-labelledby="settings-heading">
     <h2 id="settings-heading">Settings</h2>
     <button id="settings-close" type="button">Close (Esc)</button>
 
@@ -72,8 +78,10 @@ const indexHTML = `<!DOCTYPE html>
       <fieldset>
         <legend>Downloads</legend>
         <label for="download-dir">Download directory</label>
-        <input id="download-dir" type="text">
-        <button id="browse-download-dir" type="button">Browse…</button>
+        <div class="dir-row">
+          <input id="download-dir" type="text">
+          <button id="browse-download-dir" type="button">Browse…</button>
+        </div>
       </fieldset>
 
       <button type="submit">Save settings</button>

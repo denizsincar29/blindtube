@@ -104,6 +104,32 @@ main { padding: 16px; max-width: 900px; margin: 0 auto; }
 
 .comments-note { font-style: italic; opacity: 0.85; }
 
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  background: #23262e;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  min-width: 220px;
+  box-shadow: 0 4px 16px #0008;
+}
+.context-menu li {
+  padding: 8px 16px;
+  cursor: pointer;
+}
+.context-menu li:hover,
+.context-menu li:focus {
+  background: #2d3250;
+  outline: none;
+}
+
+.info-meta { opacity: 0.8; margin: 0 0 8px; }
+.dir-row { display: flex; gap: 6px; }
+.dir-row input { flex: 1; }
+
 fieldset {
   border: 1px solid var(--border);
   border-radius: 4px;
