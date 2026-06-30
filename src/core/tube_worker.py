@@ -68,7 +68,7 @@ class TubeWorker(QObject):
                 info = ydl.extract_info(search_query, download=False)
 
                 if 'entries' in info:
-                    new_entries = info['entries'][start_index-1:]
+                    new_entries = [e for e in info['entries'][start_index-1:] if e]
                     formatted_results = [self._format_info(entry) for entry in new_entries]
                     self.search_finished.emit(formatted_results, start_index > 1)
                     if not formatted_results:
@@ -111,6 +111,7 @@ class TubeWorker(QObject):
         opts.update({
             'getcomments': True,
             'extract_flat': False,
+            'extractor_args': {'youtube': {'max_comments': ['200', '20', '100', '20']}},
         })
         with yt_dlp.YoutubeDL(opts) as ydl:
             try:
@@ -128,7 +129,10 @@ class TubeWorker(QObject):
         try:
             self._setup_ydl_opts()
             if not download_dir:
-                 download_dir = self.settings_manager.get('download_directory', 'downloads/youtube')
+                if self.settings_manager:
+                    download_dir = self.settings_manager.get('download_directory', 'downloads/youtube')
+                else:
+                    download_dir = 'downloads/youtube'
 
             if not os.path.exists(download_dir):
                 os.makedirs(download_dir)

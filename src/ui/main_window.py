@@ -42,6 +42,8 @@ class MainWindow(QMainWindow):
         self.settings_manager = SettingsManager()
         self.current_query = ""
         self.next_index = 1
+        self.pending_view_info = False
+        self.search_pending = False
 
         self._setup_ui()
         self._setup_worker()
@@ -201,11 +203,13 @@ class MainWindow(QMainWindow):
         self.speak(f"Searching for {query}")
         self.current_query = query
         self.next_index = 1
+        self.search_pending = True
         self.results_list.clear()
         self.search_sig.emit(query, self.next_index)
 
     @pyqtSlot(list, bool)
     def _on_search_finished(self, search_results, is_append):
+        self.search_pending = False
         if not is_append:
              self.results_list.clear()
 
@@ -232,7 +236,9 @@ class MainWindow(QMainWindow):
 
     def _on_row_changed(self, current_row):
         # When scrolling down, if we reach the last 2 items, load 10 more results
-        if self.current_query and current_row >= self.results_list.count() - 2:
+        if (self.current_query and not self.search_pending
+                and current_row >= self.results_list.count() - 2):
+            self.search_pending = True
             self.search_sig.emit(self.current_query, self.next_index)
 
     @pyqtSlot(dict)
@@ -240,6 +246,12 @@ class MainWindow(QMainWindow):
         info = data["info"]
         url = data["url"]
         self.current_video_data = data
+
+        # If this info was fetched just to show the description/comments window
+        # (Ctrl+Enter / "View Description and Comments"), do not start playback.
+        if self.pending_view_info:
+            self.pending_view_info = False
+            return
 
         found = False
         item = None
@@ -277,6 +289,7 @@ class MainWindow(QMainWindow):
         url = item.data(Qt.ItemDataRole.UserRole)
         self.speak("Fetching video info and comments...")
         # Make sure we have the description first
+        self.pending_view_info = True
         self.getinfo_sig.emit(url)
         # Fetch comments
         self.getcomments_sig.emit(url)
