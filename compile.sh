@@ -23,6 +23,7 @@ uv run pyinstaller \
     --onefile \
     --windowed \
     --name "$APP_NAME" \
+    --collect-all pygame \
     "$ENTRY_POINT"
 
 echo
