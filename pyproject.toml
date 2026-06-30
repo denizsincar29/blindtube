@@ -16,3 +16,8 @@ dependencies = [
     "pygame-ce>=2.5.7",
     "click>=8.1.8",
 ]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.21.0",
+]

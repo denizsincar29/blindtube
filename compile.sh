@@ -1,26 +1,23 @@
 #!/usr/bin/env bash
-# Build a standalone blindtube executable with PyInstaller.
+# Build a standalone blindtube executable with PyInstaller, via uv.
 # Works in git bash, MSYS2, and regular Linux/macOS shells.
 set -e
 
 APP_NAME="blindtube"
 ENTRY_POINT="main.py"
 
-# Pick whichever python is available
-PY="python"
-if ! command -v "$PY" >/dev/null 2>&1; then
-    PY="python3"
+if ! command -v uv >/dev/null 2>&1; then
+    echo "uv is not installed. Install it from https://docs.astral.sh/uv/" >&2
+    exit 1
 fi
 
-echo "Using interpreter: $(command -v "$PY")"
-
-# Make sure pyinstaller is installed
-"$PY" -m PyInstaller --version >/dev/null 2>&1 || "$PY" -m pip install pyinstaller
+echo "Syncing dependencies with uv..."
+uv sync
 
 # Clean previous builds
 rm -rf build dist "${APP_NAME}.spec"
 
-"$PY" -m PyInstaller \
+uv run pyinstaller \
     --noconfirm \
     --clean \
     --onefile \

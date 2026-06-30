@@ -1,30 +1,25 @@
 @echo off
-REM Build a standalone blindtube executable with PyInstaller.
+REM Build a standalone blindtube executable with PyInstaller, via uv.
 
 setlocal
 
 set APP_NAME=blindtube
 set ENTRY_POINT=main.py
 
-where python >nul 2>nul
-if %errorlevel%==0 (
-    set PY=python
-) else (
-    set PY=py
-)
-
-echo Using interpreter: %PY%
-
-%PY% -m PyInstaller --version >nul 2>nul
+where uv >nul 2>nul
 if errorlevel 1 (
-    %PY% -m pip install pyinstaller
+    echo uv is not installed. Install it from https://docs.astral.sh/uv/
+    exit /b 1
 )
+
+echo Syncing dependencies with uv...
+uv sync
 
 if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
 if exist %APP_NAME%.spec del /q %APP_NAME%.spec
 
-%PY% -m PyInstaller ^
+uv run pyinstaller ^
     --noconfirm ^
     --clean ^
     --onefile ^
