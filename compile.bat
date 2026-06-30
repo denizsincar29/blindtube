@@ -22,7 +22,7 @@ if errorlevel 1 (
 echo Syncing dependencies with uv...
 uv sync
 
-set PYI_FLAGS=--noconfirm --onefile --windowed --name %APP_NAME% --collect-all pygame
+set PYI_FLAGS=--noconfirm --onefile --windowed --name %APP_NAME% --collect-all pygame --collect-data accessible_output3
 
 if "%CLEAN_BUILD%"=="1" (
     echo Doing a full clean rebuild...

@@ -1,6 +1,7 @@
 import sys
 import os
 import re
+import logging
 from PyQt6.QtGui import QAction, QKeyEvent
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QLineEdit, QListWidget, QListWidgetItem, QFileDialog,
@@ -33,10 +34,13 @@ class MainWindow(QMainWindow):
         if HAS_AO3:
             try:
                 self.output = Auto()
+                logging.info(f"Accessible output initialized: {getattr(self.output, 'name', self.output)}")
             except Exception as e:
+                logging.exception("Error initializing accessible-output3")
                 print(f"Error initializing accessible-output3: {e}")
                 self.output = None
         else:
+            logging.warning("accessible_output3 is not importable; screen reader output disabled")
             self.output = None
 
         self.settings_manager = SettingsManager()
@@ -321,6 +325,7 @@ class MainWindow(QMainWindow):
             self.speak("playing")
         except Exception as e:
             self.speak(f"Error playing video: {str(e)}")
+            logging.exception("Error playing video")
             print(f"Error playing video: {e}")
 
     def show_favorites(self):
