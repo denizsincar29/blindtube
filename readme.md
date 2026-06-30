@@ -26,6 +26,15 @@ python main.py
 
 Please note that at the current time, the application may not work with Python 3.12 due to a compatibility issue with the accessible_output2 library. This library relies on the platform_utils library, which may not yet be compatible with Python 3.12. However, it should work with other versions of Python.
 
+## Go version
+
+There's a full rewrite in progress under [`go/`](go/), using a native
+WebView shell (glaze) instead of Qt, with screen-reader announcements via
+ARIA live regions. See [`go/README.md`](go/README.md) for what's
+implemented, what's missing (comments — fall back to this Python version
+for those), and build instructions. Both versions read/write the same
+`settings.json`, so favorites and settings carry over either way.
+
 ## Contributing
 
 If you are a sighted person and would like to contribute to improving the interface for better sighted accessibility, you are more than welcome to contribute to this project. The developer of this application is blind and understands that improvements can be made for the sighted audience. Feel free to create issues, submit pull requests, or reach out to the developer with your ideas.
