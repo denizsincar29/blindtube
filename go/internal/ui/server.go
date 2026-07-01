@@ -20,16 +20,20 @@ func NewMux(svc *Service) *http.ServeMux {
 	mux.HandleFunc("/static/app.js", serveJS)
 	mux.HandleFunc("/static/app.css", serveCSS)
 
-	// YouTube-compatible URL patterns — all serve the SPA; the JS reads
-	// the id from the path/query on load and auto-plays the video.
-	//   /watch?v=<id>   standard watch URL
-	//   /shorts/<id>    Shorts
-	//   /embed/<id>     embed
-	//   /v/<id>         legacy /v/ URL
+	// YouTube-compatible URL patterns — all serve the SPA; JS handles the
+	// query params on load.
+	//   /watch?v=<id>[&t=<sec>]  standard watch URL (t= seeks to timecode)
+	//   /shorts/<id>             Shorts
+	//   /embed/<id>              embed
+	//   /v/<id>                  legacy
+	//   /results?search_query=   YouTube search URL
+	//   /download?v=<id>&format=(audio|video)  direct download
 	mux.HandleFunc("/watch", serveIndex)
 	mux.HandleFunc("/shorts/", serveIndex)
 	mux.HandleFunc("/embed/", serveIndex)
 	mux.HandleFunc("/v/", serveIndex)
+	mux.HandleFunc("/results", serveIndex)
+	mux.HandleFunc("/download", downloadHandler(svc))
 
 	// Stream proxy: piped through the Go server so the configured proxy
 	// applies to playback, not just to search/metadata, and so CDN URLs
@@ -85,6 +89,26 @@ func serveJS(w http.ResponseWriter, r *http.Request) {
 func serveCSS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/css")
 	io.WriteString(w, appCSS)
+}
+
+// downloadHandler serves /download?v=<id>&format=(audio|video)
+// Always streams the file back as a browser download (Content-Disposition:
+// attachment), regardless of desktop/web mode — this endpoint is meant to
+// be hit directly by the user pasting a URL, not by the frontend JS.
+func downloadHandler(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		id := q.Get("v")
+		if id == "" {
+			id = q.Get("id") // also accept ?id= for consistency with /api/download/*
+		}
+		if id == "" {
+			http.Error(w, "missing ?v=", http.StatusBadRequest)
+			return
+		}
+		audioOnly := q.Get("format") == "audio"
+		svc.streamDownload(w, r, id, audioOnly)
+	}
 }
 
 // streamHandler proxies the resolved googlevideo URL for the given video

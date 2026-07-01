@@ -56,24 +56,44 @@ const resultsList = $('results-list');
 const searchField = $('search-field');
 
 // ---------- YouTube-compatible URL routing ----------
-// Extracts a video id from the current page URL so that sharing or
-// typing tube.denizsincar.ru/watch?v=dQw4w9WgXcQ works exactly like
-// visiting youtube.com/watch?v=dQw4w9WgXcQ.
-function extractVideoIDFromLocation() {
-  const path   = location.pathname;   // e.g. /watch  /shorts/abc  /embed/abc
+// Parses the current page URL into { id, startSec, searchQuery } so that:
+//   /watch?v=<id>                       plays video
+//   /watch?v=<id>&t=83                  plays video and seeks to 83s
+//   /watch?v=<id>&t=1m23s               plays video and seeks to 83s
+//   /shorts/<id>  /embed/<id>  /v/<id>  plays video
+//   /results?search_query=...           runs search
+function parseLocation() {
+  const path   = location.pathname;
   const params = new URLSearchParams(location.search);
+  let id = null, startSec = 0, searchQuery = null;
 
-  // /watch?v=<id>
   if (path === '/watch') {
-    const v = params.get('v');
-    if (v) return v;
+    id = params.get('v') || null;
+  } else if (path === '/results') {
+    searchQuery = params.get('search_query') || params.get('q') || null;
+  } else {
+    const m = path.match(/^\/(?:shorts|embed|v)\/([a-zA-Z0-9_-]{10,12})/);
+    if (m) id = m[1];
   }
 
-  // /shorts/<id>  /embed/<id>  /v/<id>
-  const m = path.match(/^\/(?:shorts|embed|v)\/([a-zA-Z0-9_-]{10,12})/);
-  if (m) return m[1];
+  // ?t= — YouTube uses seconds (t=83) or XmYs notation (t=1m23s)
+  const t = params.get('t');
+  if (t) {
+    const plain = parseInt(t, 10);
+    if (!isNaN(plain) && String(plain) === t) {
+      startSec = plain;
+    } else {
+      // parse 1h2m3s / 2m3s / 3s
+      const hms = t.match(/(?:([0-9]+)h)?(?:([0-9]+)m)?(?:([0-9]+)s?)?/);
+      if (hms) {
+        startSec = (parseInt(hms[1] || 0) * 3600)
+                 + (parseInt(hms[2] || 0) * 60)
+                 + parseInt(hms[3] || 0);
+      }
+    }
+  }
 
-  return null;
+  return { id, startSec, searchQuery };
 }
 
 // ---------- Init ----------
@@ -92,19 +112,16 @@ async function init() {
   await loadFavoriteURLs();
   await showFavorites(); // home screen = favorites, same as Python version
 
-  // Auto-play from URL. Handles YouTube-compatible patterns:
-  //   /watch?v=<id>       standard YouTube watch URL
-  //   /shorts/<id>        YouTube Shorts
-  //   /embed/<id>         embed URL
-  //   /v/<id>             legacy /v/ URL
-  //   /?url=<id_or_url>   desktop CLI --url flag
-  //   /?search=<query>    desktop CLI --search flag
-  const autoID = extractVideoIDFromLocation();
+  // Auto-play / search from URL (YouTube-compatible patterns + CLI flags).
+  const loc    = parseLocation();
   const params = new URLSearchParams(location.search);
-  if (autoID) {
-    await playByURL(autoID, '');
+  if (loc.id) {
+    await playByURL(loc.id, '', loc.startSec);
+  } else if (loc.searchQuery) {
+    searchField.value = loc.searchQuery;
+    await searchAction();
   } else if (params.get('url')) {
-    await playByURL(params.get('url'), '');
+    await playByURL(params.get('url'), '', 0);
   } else if (params.get('search')) {
     searchField.value = params.get('search');
     await searchAction();
@@ -286,17 +303,25 @@ async function searchAction() {
 // ---------- Playback ----------
 async function playResult(index) {
   const r = results[index];
-  if (r) await playByURL(r.url, r.title);
+  if (r) await playByURL(r.url, r.title, 0);
 }
 
-async function playByURL(urlOrID, knownTitle) {
+async function playByURL(urlOrID, knownTitle, startSec) {
   announce('Loading ' + (knownTitle || urlOrID) + '…');
   try {
     currentVideo = await api('GET', '/api/video?id=' + encodeURIComponent(urlOrID));
     player.src = currentVideo.streamPath;
     $('now-playing').textContent = currentVideo.title + ' — ' + currentVideo.channel;
+    if (startSec) {
+      // Seek once enough metadata is loaded; canplay fires before full load.
+      player.addEventListener('loadedmetadata', function onMeta() {
+        player.currentTime = startSec;
+        player.removeEventListener('loadedmetadata', onMeta);
+      });
+    }
     await player.play().catch(() => {});
-    announce('Playing ' + currentVideo.title + ' by ' + currentVideo.channel + ', ' + fmtDuration(currentVideo.duration) + '.');
+    const atStr = startSec ? ' at ' + fmtDuration(startSec) : '';
+    announce('Playing ' + currentVideo.title + ' by ' + currentVideo.channel + ', ' + fmtDuration(currentVideo.duration) + atStr + '.');
   } catch (err) { announce('Could not play: ' + err.message, true); }
 }
 
