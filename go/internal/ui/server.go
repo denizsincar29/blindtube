@@ -20,6 +20,17 @@ func NewMux(svc *Service) *http.ServeMux {
 	mux.HandleFunc("/static/app.js", serveJS)
 	mux.HandleFunc("/static/app.css", serveCSS)
 
+	// YouTube-compatible URL patterns — all serve the SPA; the JS reads
+	// the id from the path/query on load and auto-plays the video.
+	//   /watch?v=<id>   standard watch URL
+	//   /shorts/<id>    Shorts
+	//   /embed/<id>     embed
+	//   /v/<id>         legacy /v/ URL
+	mux.HandleFunc("/watch", serveIndex)
+	mux.HandleFunc("/shorts/", serveIndex)
+	mux.HandleFunc("/embed/", serveIndex)
+	mux.HandleFunc("/v/", serveIndex)
+
 	// Stream proxy: piped through the Go server so the configured proxy
 	// applies to playback, not just to search/metadata, and so CDN URLs
 	// (IP-pinned, short-lived) never reach the browser directly.

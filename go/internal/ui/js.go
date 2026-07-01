@@ -55,6 +55,27 @@ const player = $('video-player');
 const resultsList = $('results-list');
 const searchField = $('search-field');
 
+// ---------- YouTube-compatible URL routing ----------
+// Extracts a video id from the current page URL so that sharing or
+// typing tube.denizsincar.ru/watch?v=dQw4w9WgXcQ works exactly like
+// visiting youtube.com/watch?v=dQw4w9WgXcQ.
+function extractVideoIDFromLocation() {
+  const path   = location.pathname;   // e.g. /watch  /shorts/abc  /embed/abc
+  const params = new URLSearchParams(location.search);
+
+  // /watch?v=<id>
+  if (path === '/watch') {
+    const v = params.get('v');
+    if (v) return v;
+  }
+
+  // /shorts/<id>  /embed/<id>  /v/<id>
+  const m = path.match(/^\/(?:shorts|embed|v)\/([a-zA-Z0-9_-]{10,12})/);
+  if (m) return m[1];
+
+  return null;
+}
+
 // ---------- Init ----------
 async function init() {
   try {
@@ -71,12 +92,19 @@ async function init() {
   await loadFavoriteURLs();
   await showFavorites(); // home screen = favorites, same as Python version
 
-  // CLI args passed via query string from the desktop main.go:
-  // ?url=<id_or_url>  or  ?search=<query>
+  // Auto-play from URL. Handles YouTube-compatible patterns:
+  //   /watch?v=<id>       standard YouTube watch URL
+  //   /shorts/<id>        YouTube Shorts
+  //   /embed/<id>         embed URL
+  //   /v/<id>             legacy /v/ URL
+  //   /?url=<id_or_url>   desktop CLI --url flag
+  //   /?search=<query>    desktop CLI --search flag
+  const autoID = extractVideoIDFromLocation();
   const params = new URLSearchParams(location.search);
-  if (params.get('url')) {
-    searchField.value = params.get('url');
-    await searchAction();
+  if (autoID) {
+    await playByURL(autoID, '');
+  } else if (params.get('url')) {
+    await playByURL(params.get('url'), '');
   } else if (params.get('search')) {
     searchField.value = params.get('search');
     await searchAction();
