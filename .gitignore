@@ -3,3 +3,7 @@ settings.json
 *.dll
 /dll_downloader.py
 __pycache__/
+.env
+go/logs/
+go/blindtube-web
+go/blindtube
